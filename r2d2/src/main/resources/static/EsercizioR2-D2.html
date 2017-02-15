@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Esercizio R2-D2</title>
+<script src='http://code.jquery.com/jquery-latest.min.js'
+	type='text/javascript'></script>
+<script src='cors-utils.js' type='text/javascript'></script>
+</head>
+<body>
+	<div id="step10" class="step">
+		Definizione scenario:<br>
+		Altezza <input type="number" id="altezza" min="1" max="10"><br>
+		Larghezza <input type="number" id="larghezza" min="1" max="10"><br>
+		<input type="button" id="btnStep10" value="Avanti">
+	</div>
+
+	<div id="step20" class="step">
+		Aggiungi Ostacolo:<br>
+		X <input type="number" id="x_ostacolo" min="1" max="10"><br>
+		Y <input type="number" id="y_ostacolo" min="1" max="10"><br>
+		Altezza <input type="number" id="h_ostacolo" min="1" max="10"><br>
+		<input type="button" id="btnStep20" value="Aggiungi">
+		<input type="button" id="btnStep21" value="Avanti">
+	</div>
+
+	<div id="step30" class="step">
+		R2-D2:<br>
+		X <input type="number" id="x_r2d2" min="1" max="10"><br>
+		Y <input type="number" id="y_r2d2" min="1" max="10"><br>
+		Orientamento (N - S - W - E) <input type="text" id="orientamento" maxlength="1"><br>
+		Carica batteria <input type="number" id="batteria" min="1" max="10"><br>
+		<input type="button" id="btnStep30" value="Avanti">
+	</div>
+	
+	<div id="step40" class="step">
+		Navigazione:<br>
+		Comandi separati da "-" (Es. R-F-F-R-B-L) <input type="text" id="navigazione"><br>
+		<input type="button" id="btnStep40" value="Fine">
+		<input type="button" id="btnShutdown" value="Shutdown server">
+	</div>
+</body>
+<script>
+
+	var altezza;
+	var larghezza;
+	var listOstacoli = [];
+	var x_r2d2;
+	var y_r2d2;
+	var orientamento;
+	var batteria;
+
+	//dimensione cella
+	var cellSize = 40;
+	var canvas;
+	
+	function showStep(id) {
+		$(".step").hide();
+		$("#step" + id).show();
+	}
+
+	function disegnaGriglia(x, y) {
+		//larghezza e altezza griglia
+		var bw = x * cellSize;
+		var bh = y * cellSize;
+		var padding = 10;
+		//dimensione del canvas
+		var cw = bw + (padding * 2) + 1;
+		var ch = bh + (padding * 2) + 1;
+
+		var canvas = $('<canvas/>').attr({
+			width : cw,
+			height : ch
+		}).appendTo('body');
+
+		var context = canvas.get(0).getContext("2d");
+
+		var stepX = bw / x;
+		for (var i = 0; i <= bw; i += stepX) {
+			context.moveTo(0.5 + i + padding, padding);
+			context.lineTo(0.5 + i + padding, bh + padding);
+		}
+
+		var stepY = bh / y;
+		for (var i = 0; i <= bh; i += stepY) {
+			context.moveTo(padding, 0.5 + i + padding);
+			context.lineTo(bw + padding, 0.5 + i + padding);
+		}
+
+		context.strokeStyle = "black";
+		context.stroke();
+
+		return canvas;
+	}
+	
+	function disegnaOstacolo(canvas, x, y, h){
+		var context = canvas.get(0).getContext("2d");
+		context.strokeText(h, x * cellSize - 20, y * cellSize);
+	}
+	
+	function disegnaRobot(canvas, x, y, orientamento, batteria){
+		var context = canvas.get(0).getContext("2d");
+		context.strokeText(orientamento + batteria, x * cellSize - 20, y * cellSize - 10);
+	}
+
+	function creazioneRobot() {
+		var jsonRobot = {
+			"posX" : x_r2d2,
+			"posY" : y_r2d2,
+			"orientamento" : "N",
+			"batteryLevel" : 10
+		};
+		var urlRobot = "http://localhost:8080/initR2D2";
+		makeRequest(urlRobot, jsonRobot, function(objRobot) {
+			creazioneAmbiente(objRobot)
+		});
+	}
+
+	function creazioneAmbiente(objRobot) {
+		var jsonAmbiente = {
+			"larghezza" : larghezza,
+			"altezza" : altezza,
+			"listaOstacoli" : listOstacoli
+		};
+		var urlAmbiente = "http://localhost:8080/initAmbiente";
+		makeRequest(urlAmbiente, jsonAmbiente, function(objAmbiente) {
+			navigazione(objRobot, objAmbiente);
+		});
+	}
+
+	function navigazione(objRobot, objAmbiente) {
+		var jsonNavigazione = {
+			"scenario" : objAmbiente,
+			"r2d2" : objRobot,
+			"navigationCommand" : $("#navigazione").val()
+		};
+		var urlNavigazione = "http://localhost:8080/navigate";
+		makeRequest(urlNavigazione, jsonNavigazione, function(objNavigazione) {
+			console.log(objNavigazione);
+			var canvasDest = disegnaGriglia(larghezza, altezza);
+			for(ostacolo of listOstacoli){
+				disegnaOstacolo(canvasDest, ostacolo.posX, ostacolo.posY, ostacolo.altezza);
+			}
+			var orientamento = objNavigazione.orientamento.charAt(0);
+			disegnaRobot(canvasDest, objNavigazione.posX, objNavigazione.posY, orientamento, objNavigazione.batteryLevel);
+		});
+	}
+
+	$("#btnStep10").click(function() {
+		altezza = $("#altezza").val();
+		larghezza = $("#larghezza").val();
+		canvas = disegnaGriglia(larghezza, altezza);
+		showStep(20);
+	});
+
+	$("#btnStep20").click(function() {
+		var posX = $("#x_ostacolo").val();
+		var posY = $("#y_ostacolo").val();
+		var altezzaOstacolo = $("#h_ostacolo").val();
+		listOstacoli.push({"posX": posX,"posY": posY, "altezza": altezzaOstacolo});
+		disegnaOstacolo(canvas, posX, posY, altezzaOstacolo);
+		$("#x_ostacolo").val("");
+		$("#y_ostacolo").val("");
+		$("#h_ostacolo").val("");
+	});
+	
+	$("#btnStep21").click(function() {
+		showStep(30);
+	});
+	
+	$("#btnStep30").click(function() {
+		x_r2d2 = $("#x_r2d2").val();
+		y_r2d2 = $("#y_r2d2").val();
+		orientamento = $("#orientamento").val();
+		batteria = $("#batteria").val();
+		disegnaRobot(canvas, x_r2d2, y_r2d2, orientamento, batteria);
+		showStep(40);
+	});
+
+	$("#btnStep40").click(function() {
+		creazioneRobot();
+	});
+	
+	$("#btnShutdown").click(function(){
+		makeRequest("http://localhost:8080/server-shutdown");
+	});
+
+
+	showStep(10);
+</script>
+</html>
